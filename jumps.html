@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JUMPS // COUNTER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Familjen+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.min.js"></script>
+<style>
+  :root {
+    --bg: #07090f;
+    --surface: #0e1320;
+    --surface-2: #161c2e;
+    --line: #1f2940;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --accent: #4cc9f0;
+    --accent-dim: #2aa6cf;
+    --warn: #ffb547;
+    --pb: #f72585;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Familjen Grotesk', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(at 20% 10%, rgba(76, 201, 240, 0.05), transparent 50%),
+      radial-gradient(at 80% 80%, rgba(247, 37, 133, 0.04), transparent 50%);
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.012) 2px,
+      rgba(255, 255, 255, 0.012) 4px
+    );
+    z-index: 100;
+  }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+
+  .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .logo a { color: inherit; text-decoration: none; }
+  .logo span { color: var(--accent); }
+
+  .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .meta-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .meta-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.5s infinite; }
+  .meta-dot.loading { background: var(--warn); animation: pulse 0.8s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .panel-label {
+    position: absolute;
+    top: 8px; left: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    z-index: 5;
+    text-shadow: 0 0 6px rgba(0,0,0,0.7);
+  }
+
+  .camera-wrap {
+    aspect-ratio: 4/3;
+    position: relative;
+    background: #000;
+  }
+  .camera-wrap video, .camera-wrap canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .camera-wrap.mirrored video, .camera-wrap.mirrored canvas { transform: scaleX(-1); }
+
+  .baseline-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: rgba(76, 201, 240, 0.4);
+    box-shadow: 0 0 8px rgba(76, 201, 240, 0.4);
+    pointer-events: none;
+    z-index: 3;
+    display: none;
+  }
+  .baseline-line.show { display: block; }
+
+  .overlay-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    text-align: center;
+    padding: 24px;
+    background: rgba(7, 9, 15, 0.92);
+    z-index: 10;
+  }
+  .overlay-msg h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .overlay-msg p {
+    color: var(--muted);
+    max-width: 380px;
+    font-size: 14px;
+    line-height: 1.55;
+    margin-bottom: 24px;
+  }
+
+  .btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 12px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-radius: 2px;
+  }
+  .btn:hover { background: #fff; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--muted); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
+  .btn-warn { background: var(--pb); color: #fff; }
+  .btn-warn:hover { background: #fff; color: var(--pb); }
+
+  .status-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: rgba(7, 9, 15, 0.7);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--line);
+    z-index: 4;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .status-bar .left { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .status-bar .right { display: flex; gap: 12px; }
+
+  .conf-bar {
+    display: inline-block;
+    width: 70px;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+    vertical-align: middle;
+  }
+  .conf-bar div {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s;
+  }
+
+  .counter-card {
+    padding: 32px 24px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+    border: 1px solid var(--line);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  }
+  .counter-card.airborne {
+    border-color: var(--accent);
+    box-shadow: 0 0 40px rgba(76, 201, 240, 0.18), inset 0 0 30px rgba(76, 201, 240, 0.05);
+  }
+
+  .counter-state {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .counter-card.airborne .counter-state { color: var(--accent); }
+
+  .counter-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: clamp(72px, 14vw, 132px);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    text-shadow: 0 0 30px rgba(230, 237, 243, 0.1);
+  }
+  .counter-card.airborne .counter-display {
+    color: var(--accent);
+    text-shadow: 0 0 24px rgba(76, 201, 240, 0.4);
+  }
+
+  .counter-sub {
+    font-family: 'Familjen Grotesk', sans-serif;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .timer-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .stat {
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .stat.timer { border-color: rgba(76, 201, 240, 0.3); }
+  .stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .stat.timer .stat-label { color: var(--accent); }
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 28px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .control-panel {
+    margin-top: 16px;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .control-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .model-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .model-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .model-option:hover { border-color: var(--accent-dim); }
+  .model-option.selected {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, var(--surface-2), rgba(76, 201, 240, 0.08));
+    box-shadow: inset 0 0 12px rgba(76, 201, 240, 0.06);
+  }
+  .model-option.selected .model-name { color: var(--accent); }
+  .model-option .model-info { display: flex; flex-direction: column; gap: 3px; }
+  .model-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .model-desc {
+    font-family: 'Familjen Grotesk', sans-serif;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .model-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--muted);
+  }
+  .model-option.selected .model-tag { border-color: var(--accent); color: var(--accent); }
+
+  .button-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .button-row .btn { flex: 1; min-width: 110px; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    color: var(--muted);
+    transition: all 0.15s;
+  }
+  .toggle:hover { color: var(--text); }
+  .toggle.on { color: var(--accent); border-color: var(--accent); }
+
+  footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  footer a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--muted); }
+  footer a:hover { color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo"><a href="index.html">JUMPS<span>//</span>COUNTER</a></div>
+      <div class="meta">
+        <span class="meta-dot" id="status-dot"></span>
+        <span id="status-text">Standby</span>
+        &nbsp;·&nbsp;FPS <span id="fps">--</span>
+        &nbsp;·&nbsp;<span id="model-label">No model</span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Camera -->
+      <div>
+        <div class="panel camera-wrap mirrored" id="cam-wrap">
+          <span class="panel-label">// FEED 01</span>
+          <video id="video" playsinline muted autoplay></video>
+          <canvas id="canvas"></canvas>
+          <div class="baseline-line" id="baseline-line"></div>
+
+          <div class="overlay-msg" id="overlay">
+            <h2 id="overlay-title">Initialize</h2>
+            <p id="overlay-desc">Pick a model and grant camera access. Stand back so your full body is in frame — about 6 feet of space works for skipping rope.</p>
+            <button class="btn" id="start-btn">Start camera</button>
+          </div>
+
+          <div class="status-bar" id="status-bar" style="display:none">
+            <div class="left">Detection <span class="conf-bar"><div id="conf-fill" style="width:0%"></div></span></div>
+            <div class="right">
+              <span>Phase <span id="phase-state" style="color:var(--text)">—</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="toggle on" id="mirror-toggle">⇋ Mirror</div>
+          <div class="toggle" id="skeleton-toggle">⌗ Skeleton</div>
+          <div class="toggle" id="baseline-toggle">▭ Baseline</div>
+          <div class="toggle" id="audio-toggle">♪ Audio</div>
+        </div>
+      </div>
+
+      <!-- Counter + controls -->
+      <div>
+        <div class="counter-card" id="counter-card">
+          <div class="counter-state" id="counter-state">// Awaiting jumps</div>
+          <div class="counter-display" id="counter-display">0</div>
+          <div class="counter-sub" id="counter-sub">Auto-counts jumps and skips from pose tracking.</div>
+        </div>
+
+        <div class="timer-row">
+          <div class="stat timer">
+            <div class="stat-label">Timer</div>
+            <div class="stat-value" id="timer-val">00:00.0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Rate · /min</div>
+            <div class="stat-value" id="rate-val">0</div>
+          </div>
+        </div>
+
+        <div class="control-panel">
+          <div class="control-header">AI Model</div>
+          <div class="model-grid" id="model-grid">
+            <div class="model-option selected" data-model="lightning">
+              <div class="model-info">
+                <span class="model-name">MoveNet · Lightning</span>
+                <span class="model-desc">Fastest. Best for fast skipping.</span>
+              </div>
+              <span class="model-tag">~9 MB</span>
+            </div>
+            <div class="model-option" data-model="thunder">
+              <div class="model-info">
+                <span class="model-name">MoveNet · Thunder</span>
+                <span class="model-desc">Slower, more precise keypoints.</span>
+              </div>
+              <span class="model-tag">~25 MB</span>
+            </div>
+            <div class="model-option" data-model="posenet">
+              <div class="model-info">
+                <span class="model-name">PoseNet · MobileNet</span>
+                <span class="model-desc">Classic detector. Wide compatibility.</span>
+              </div>
+              <span class="model-tag">~13 MB</span>
+            </div>
+          </div>
+
+          <div class="control-header">Controls</div>
+          <div class="button-row">
+            <button class="btn" id="toggle-btn" disabled>Start</button>
+            <button class="btn btn-warn" id="reset-btn">Reset</button>
+            <button class="btn btn-ghost" id="recal-btn">Recalibrate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      MoveNet / PoseNet · TensorFlow.js · Inference runs locally · No video leaves your device &nbsp;·&nbsp; <a href="index.html">← back</a>
+    </footer>
+  </div>
+
+<script>
+(async () => {
+  const $ = id => document.getElementById(id);
+  const video = $('video');
+  const canvas = $('canvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = $('overlay');
+  const overlayTitle = $('overlay-title');
+  const overlayDesc = $('overlay-desc');
+  const startBtn = $('start-btn');
+  const statusBar = $('status-bar');
+  const confFill = $('conf-fill');
+  const phaseState = $('phase-state');
+  const statusDot = $('status-dot');
+  const statusText = $('status-text');
+  const fpsEl = $('fps');
+  const modelLabel = $('model-label');
+  const counterCard = $('counter-card');
+  const counterState = $('counter-state');
+  const counterDisplay = $('counter-display');
+  const counterSub = $('counter-sub');
+  const timerVal = $('timer-val');
+  const rateVal = $('rate-val');
+  const camWrap = $('cam-wrap');
+  const mirrorToggle = $('mirror-toggle');
+  const skeletonToggle = $('skeleton-toggle');
+  const baselineToggle = $('baseline-toggle');
+  const audioToggle = $('audio-toggle');
+  const baselineLine = $('baseline-line');
+  const toggleBtn = $('toggle-btn');
+  const resetBtn = $('reset-btn');
+  const recalBtn = $('recal-btn');
+  const modelGrid = $('model-grid');
+
+  // State
+  let model = null;
+  let modelKind = 'lightning'; // 'lightning' | 'thunder' | 'posenet'
+  let modelInputSize = 192;
+  let running = false;       // camera + inference loop alive
+  let counting = false;      // user has pressed Start
+  let mirror = true;
+  let drawSkeleton = false;
+  let showBaseline = false;
+  let audioCue = false;
+
+  // Jump detection state
+  let jumpCount = 0;
+  let baseline = null;        // smoothed grounded y for ankles (image coords)
+  let baselineSamples = 0;
+  let airborne = false;
+  let airborneStart = 0;
+  let lastJumpTs = 0;
+  const ENTER_DELTA = 18;     // px above baseline to count as airborne
+  const EXIT_DELTA = 8;       // px back toward baseline to count as landed
+  const MIN_AIR_MS = 60;      // ignore micro-bobs
+  const MIN_GAP_MS = 180;     // debounce between jumps
+
+  // Timer
+  let elapsedMs = 0;
+  let timerStart = 0;
+
+  // FPS
+  let frames = 0;
+  let fpsLastUpdate = performance.now();
+
+  // Model URLs / labels
+  const MODELS = {
+    lightning: {
+      label: 'MoveNet Lightning',
+      input: 192,
+      tfhub: 'https://tfhub.dev/google/tfjs-model/movenet/singlepose/lightning/4',
+      kaggle: 'https://www.kaggle.com/models/google/movenet/frameworks/tfJs/variations/singlepose-lightning/versions/4/model.json?tfjs-format=file&tfhub-redirect=true'
+    },
+    thunder: {
+      label: 'MoveNet Thunder',
+      input: 256,
+      tfhub: 'https://tfhub.dev/google/tfjs-model/movenet/singlepose/thunder/4',
+      kaggle: 'https://www.kaggle.com/models/google/movenet/frameworks/tfJs/variations/singlepose-thunder/versions/4/model.json?tfjs-format=file&tfhub-redirect=true'
+    },
+    posenet: {
+      label: 'PoseNet MobileNet'
+    }
+  };
+
+  // --- helpers ---
+  function setStatus(text, mode) {
+    statusText.textContent = text;
+    statusDot.className = 'meta-dot ' + (mode || '');
+  }
+
+  function fmtTimer(ms) {
+    const total = ms / 1000;
+    const m = Math.floor(total / 60);
+    const s = total - m * 60;
+    return `${m.toString().padStart(2,'0')}:${s.toFixed(1).padStart(4,'0')}`;
+  }
+
+  function beep(freq, dur) {
+    if (!audioCue) return;
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = freq;
+      o.type = 'sine';
+      g.gain.setValueAtTime(0.12, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+      o.start();
+      o.stop(ac.currentTime + dur);
+    } catch (e) {}
+  }
+
+  function updateCounterUI() {
+    counterDisplay.textContent = jumpCount;
+    const minutes = elapsedMs / 60000;
+    rateVal.textContent = minutes > 0.05 ? Math.round(jumpCount / minutes) : 0;
+  }
+
+  function updateBaselineLine() {
+    if (baseline == null || !video.videoHeight) {
+      baselineLine.classList.remove('show');
+      return;
+    }
+    const pct = (baseline / video.videoHeight) * 100;
+    baselineLine.style.top = pct + '%';
+    baselineLine.classList.toggle('show', showBaseline);
+  }
+
+  // --- model loading ---
+  async function loadSelectedModel() {
+    setStatus('Loading model…', 'loading');
+    overlayTitle.textContent = 'Loading model';
+    overlayDesc.textContent = `Fetching ${MODELS[modelKind].label} weights…`;
+    modelLabel.textContent = MODELS[modelKind].label;
+
+    await tf.setBackend('webgl');
+    await tf.ready();
+
+    if (modelKind === 'posenet') {
+      if (typeof posenet === 'undefined') throw new Error('PoseNet library not loaded');
+      model = await posenet.load({
+        architecture: 'MobileNetV1',
+        outputStride: 16,
+        inputResolution: { width: 257, height: 257 },
+        multiplier: 0.75
+      });
+      modelInputSize = 257;
+    } else {
+      const cfg = MODELS[modelKind];
+      modelInputSize = cfg.input;
+      try {
+        model = await tf.loadGraphModel(cfg.tfhub, { fromTFHub: true });
+      } catch (e) {
+        model = await tf.loadGraphModel(cfg.kaggle);
+      }
+      // Warm up
+      const dummy = tf.zeros([1, modelInputSize, modelInputSize, 3], 'int32');
+      const out = await model.executeAsync(dummy);
+      tf.dispose(out);
+      tf.dispose(dummy);
+    }
+  }
+
+  // --- camera + init ---
+  async function startCamera() {
+    setStatus('Requesting camera…', 'loading');
+    overlayTitle.textContent = 'Connecting';
+    overlayDesc.textContent = 'Camera permission required…';
+    startBtn.style.display = 'none';
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await new Promise(r => video.onloadedmetadata = r);
+      await video.play();
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      await loadSelectedModel();
+
+      overlay.style.display = 'none';
+      statusBar.style.display = 'flex';
+      setStatus('Ready', 'active');
+      toggleBtn.disabled = false;
+      counterSub.textContent = 'Press Start, then begin jumping.';
+
+      running = true;
+      requestAnimationFrame(loop);
+    } catch (err) {
+      console.error(err);
+      overlayTitle.textContent = 'Error';
+      overlayDesc.textContent = (err && err.message) || 'Could not start camera or model.';
+      startBtn.textContent = 'Retry';
+      startBtn.style.display = 'inline-block';
+      setStatus('Error', '');
+    }
+  }
+
+  async function swapModel(newKind) {
+    if (newKind === modelKind) return;
+    modelKind = newKind;
+    document.querySelectorAll('.model-option').forEach(el => {
+      el.classList.toggle('selected', el.dataset.model === modelKind);
+    });
+    modelLabel.textContent = MODELS[modelKind].label;
+
+    if (!running) return; // first load happens in startCamera
+
+    // Pause inference while we swap
+    const wasCounting = counting;
+    counting = false;
+    setStatus('Switching model…', 'loading');
+    try {
+      // Dispose old MoveNet model
+      if (model && typeof model.dispose === 'function') {
+        try { model.dispose(); } catch (e) {}
+      }
+      model = null;
+      await loadSelectedModel();
+      setStatus('Ready', 'active');
+      counterSub.textContent = `Switched to ${MODELS[modelKind].label}.`;
+    } catch (err) {
+      console.error('Model swap failed:', err);
+      setStatus('Model error', '');
+      counterSub.textContent = 'Failed to switch model. See console.';
+    }
+    counting = wasCounting;
+    // Recalibrate baseline for the new model coordinate behaviour
+    baseline = null;
+    baselineSamples = 0;
+  }
+
+  // --- inference (returns 17 keypoints in pixel coords) ---
+  async function predictPose() {
+    if (modelKind === 'posenet') {
+      const pose = await model.estimateSinglePose(video, { flipHorizontal: false });
+      // posenet has 17 keypoints already in pixel coords matching the video
+      const kp = new Array(17);
+      pose.keypoints.forEach(p => {
+        // PoseNet indices match MoveNet
+        const idx = POSENET_INDEX[p.part];
+        if (idx !== undefined) kp[idx] = { x: p.position.x, y: p.position.y, score: p.score };
+      });
+      for (let i = 0; i < 17; i++) if (!kp[i]) kp[i] = { x: 0, y: 0, score: 0 };
+      return kp;
+    }
+    // MoveNet
+    const sz = modelInputSize;
+    const input = tf.tidy(() => {
+      const img = tf.browser.fromPixels(video);
+      return tf.image.resizeBilinear(img, [sz, sz]).toInt().expandDims(0);
+    });
+    const result = await model.executeAsync(input);
+    const data = await result.data();
+    input.dispose();
+    if (Array.isArray(result)) result.forEach(t => t.dispose()); else result.dispose();
+
+    const kp = [];
+    for (let i = 0; i < 17; i++) {
+      kp.push({
+        y: data[i * 3] * video.videoHeight,
+        x: data[i * 3 + 1] * video.videoWidth,
+        score: data[i * 3 + 2]
+      });
+    }
+    return kp;
+  }
+
+  // PoseNet -> MoveNet keypoint index mapping
+  const POSENET_INDEX = {
+    nose: 0, leftEye: 1, rightEye: 2, leftEar: 3, rightEar: 4,
+    leftShoulder: 5, rightShoulder: 6, leftElbow: 7, rightElbow: 8,
+    leftWrist: 9, rightWrist: 10, leftHip: 11, rightHip: 12,
+    leftKnee: 13, rightKnee: 14, leftAnkle: 15, rightAnkle: 16
+  };
+
+  // --- drawing ---
+  const SKELETON_EDGES = [
+    [0,1],[0,2],[1,3],[2,4],
+    [5,6],[5,7],[7,9],[6,8],[8,10],
+    [5,11],[6,12],[11,12],
+    [11,13],[13,15],[12,14],[14,16]
+  ];
+
+  function drawPose(kp, active) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!drawSkeleton) return;
+    const color = active ? '#4cc9f0' : '#7d8590';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 3;
+    SKELETON_EDGES.forEach(([a, b]) => {
+      const pa = kp[a], pb = kp[b];
+      if (pa.score > 0.25 && pb.score > 0.25) {
+        ctx.beginPath();
+        ctx.moveTo(pa.x, pa.y);
+        ctx.lineTo(pb.x, pb.y);
+        ctx.stroke();
+      }
+    });
+    kp.forEach(p => {
+      if (p.score > 0.25) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // --- jump detection ---
+  // Uses the average y of the two ankles (or hips as fallback).
+  // y increases downward in image coords, so a jump *decreases* y.
+  function readAnkleY(kp) {
+    const MIN_S = 0.25;
+    const la = kp[15], ra = kp[16];
+    const vis = [];
+    if (la.score > MIN_S) vis.push(la.y);
+    if (ra.score > MIN_S) vis.push(ra.y);
+    if (vis.length === 0) {
+      // fallback to hips
+      const lh = kp[11], rh = kp[12];
+      const h = [];
+      if (lh.score > MIN_S) h.push(lh.y);
+      if (rh.score > MIN_S) h.push(rh.y);
+      if (h.length === 0) return { y: null, confidence: 0 };
+      return { y: h.reduce((a,b)=>a+b,0) / h.length, confidence: 0.5 };
+    }
+    return { y: vis.reduce((a,b)=>a+b,0) / vis.length, confidence: Math.min(1, vis.length / 2) };
+  }
+
+  function detectJump(y, t) {
+    if (y == null) return;
+
+    if (baseline == null) {
+      baseline = y;
+      baselineSamples = 1;
+      updateBaselineLine();
+      return;
+    }
+
+    // Adaptive baseline: only follow downward drift (toward floor) when grounded.
+    if (!airborne) {
+      // Pull baseline toward current y, but only if y is close to or below baseline.
+      if (y > baseline - EXIT_DELTA) {
+        baseline = baseline * 0.95 + y * 0.05;
+        updateBaselineLine();
+      }
+    }
+
+    if (!counting) return;
+
+    if (!airborne && y < baseline - ENTER_DELTA) {
+      airborne = true;
+      airborneStart = t;
+      counterCard.classList.add('airborne');
+      counterState.textContent = '// Airborne';
+      phaseState.textContent = 'AIR';
+      phaseState.style.color = 'var(--accent)';
+    } else if (airborne && y > baseline - EXIT_DELTA) {
+      const air = t - airborneStart;
+      airborne = false;
+      counterCard.classList.remove('airborne');
+      counterState.textContent = '// Grounded';
+      phaseState.textContent = 'GROUND';
+      phaseState.style.color = 'var(--text)';
+      if (air >= MIN_AIR_MS && (t - lastJumpTs) >= MIN_GAP_MS) {
+        jumpCount++;
+        lastJumpTs = t;
+        beep(880, 0.06);
+        updateCounterUI();
+      }
+    }
+  }
+
+  // --- main loop ---
+  async function loop() {
+    if (!running) return;
+    const t = performance.now();
+
+    frames++;
+    if (t - fpsLastUpdate > 500) {
+      fpsEl.textContent = Math.round((frames * 1000) / (t - fpsLastUpdate));
+      frames = 0;
+      fpsLastUpdate = t;
+    }
+
+    if (counting) {
+      elapsedMs += t - (timerStart || t);
+      timerStart = t;
+      timerVal.textContent = fmtTimer(elapsedMs);
+      updateCounterUI();
+    }
+
+    try {
+      const kp = await predictPose();
+      const { y, confidence } = readAnkleY(kp);
+      confFill.style.width = Math.round(confidence * 100) + '%';
+      drawPose(kp, counting && airborne);
+      detectJump(y, t);
+    } catch (err) {
+      console.error('Detection error:', err);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // --- events ---
+  startBtn.addEventListener('click', startCamera);
+
+  toggleBtn.addEventListener('click', () => {
+    counting = !counting;
+    if (counting) {
+      timerStart = performance.now();
+      toggleBtn.textContent = 'Pause';
+      counterState.textContent = '// Counting';
+      counterSub.textContent = 'Timer running. Reset when you want to start over.';
+      beep(660, 0.08);
+    } else {
+      toggleBtn.textContent = 'Start';
+      counterState.textContent = '// Paused';
+      counterSub.textContent = 'Timer paused.';
+      airborne = false;
+      counterCard.classList.remove('airborne');
+      beep(440, 0.08);
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    jumpCount = 0;
+    elapsedMs = 0;
+    timerStart = performance.now();
+    airborne = false;
+    counting = false;
+    toggleBtn.textContent = 'Start';
+    counterCard.classList.remove('airborne');
+    counterState.textContent = '// Awaiting jumps';
+    counterSub.textContent = 'Counter and timer cleared.';
+    timerVal.textContent = '00:00.0';
+    updateCounterUI();
+    beep(330, 0.12);
+  });
+
+  recalBtn.addEventListener('click', () => {
+    baseline = null;
+    baselineSamples = 0;
+    airborne = false;
+    counterCard.classList.remove('airborne');
+    counterSub.textContent = 'Baseline reset — stand still for a moment.';
+    updateBaselineLine();
+  });
+
+  mirrorToggle.addEventListener('click', () => {
+    mirror = !mirror;
+    mirrorToggle.classList.toggle('on', mirror);
+    camWrap.classList.toggle('mirrored', mirror);
+  });
+
+  skeletonToggle.addEventListener('click', () => {
+    drawSkeleton = !drawSkeleton;
+    skeletonToggle.classList.toggle('on', drawSkeleton);
+    if (!drawSkeleton) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  });
+
+  baselineToggle.addEventListener('click', () => {
+    showBaseline = !showBaseline;
+    baselineToggle.classList.toggle('on', showBaseline);
+    updateBaselineLine();
+  });
+
+  audioToggle.addEventListener('click', () => {
+    audioCue = !audioCue;
+    audioToggle.classList.toggle('on', audioCue);
+    if (audioCue) beep(880, 0.1);
+  });
+
+  modelGrid.addEventListener('click', (e) => {
+    const opt = e.target.closest('.model-option');
+    if (!opt) return;
+    swapModel(opt.dataset.model);
+  });
+
+  // initial UI
+  updateCounterUI();
+})();
+</script>
+</body>
+</html>
