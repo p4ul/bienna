@@ -112,8 +112,11 @@
   .cards {
     margin-top: auto;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
+  }
+  @media (max-width: 900px) {
+    .cards { grid-template-columns: 1fr 1fr; }
   }
   @media (max-width: 640px) {
     .cards { grid-template-columns: 1fr; }
@@ -220,6 +223,16 @@
       <div class="card-num">02 // Balance</div>
       <div class="card-title">Handstand</div>
       <div class="card-desc">Timer that watches you stand on your hands. Tracks personal bests and stops the clock when you tumble.</div>
+      <div class="card-go">
+        <span>Open tool</span>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+
+    <a class="card" href="jumps.html">
+      <div class="card-num">03 // Cardio</div>
+      <div class="card-title">Jumps</div>
+      <div class="card-desc">Counts your jumps and skips from camera. Built-in timer, reset, and a choice of pose models.</div>
       <div class="card-go">
         <span>Open tool</span>
         <span class="arrow">→</span>
